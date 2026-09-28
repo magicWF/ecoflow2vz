@@ -1,0 +1,43 @@
+# =============================================================================
+# ecoFlow2vz — Konfiguration
+# =============================================================================
+# Kopiere diese Datei nach config.yaml und passe die Werte an:
+#   cp config.example.yaml config.yaml
+# =============================================================================
+
+# --- EcoFlow Developer API ---------------------------------------------------
+ecoflow:
+  access_key: "YOUR_ACCESS_KEY"       # Vom EcoFlow Developer Portal
+  secret_key: "YOUR_SECRET_KEY"       # Vom EcoFlow Developer Portal
+  device_sn: "YOUR_DEVICE_SN"         # Seriennummer deines Stream-Geräts
+  api_host: "api-e.ecoflow.com"       # EU: api-e.ecoflow.com | Global: api.ecoflow.com
+
+# --- Volkszähler Middleware --------------------------------------------------
+volkszaehler:
+  base_url: "http://vz-g14.home:81/middleware"
+
+# --- Kanal-UUIDs (Volkszähler) -----------------------------------------------
+# Trage hier die UUIDs deiner Volkszähler-Kanäle ein.
+# Kanäle, die leer oder auskommentiert sind, werden übersprungen.
+channels:
+  pv1_power:      ""    # Leistung PV1 (W)
+  pv2_power:      ""    # Leistung PV2 (W)
+  pv3_power:      ""    # Leistung PV3 (W)
+  pv4_power:      ""    # Leistung PV4 (W)
+  pv_total:       ""    # Summe Leistung PV (W)
+  battery_power:  ""    # Leistung Batterie (W) — positiv=Laden, negativ=Entladen
+  grid_power:     ""    # Leistung Grid (W)
+  battery_soc:    ""    # Batterieladung (%)
+  battery_energy: ""    # Gespeicherte Energie in Batterie (Wh)
+
+# --- Optionale Einstellungen -------------------------------------------------
+
+# Push-Intervall in Sekunden. 0 = bei jeder MQTT-Nachricht sofort pushen.
+push_interval_seconds: 0
+
+# Fallback-Batteriekapazität in Wh, falls cmsBattFullEnergy nicht über MQTT kommt.
+# Stream 800 AC = 1024, Stream Ultra (4 Module) = 3840
+battery_capacity_wh: 3840
+
+# Log-Level: DEBUG, INFO, WARNING, ERROR
+log_level: "INFO"

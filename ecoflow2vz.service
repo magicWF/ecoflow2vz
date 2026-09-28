@@ -1,0 +1,26 @@
+[Unit]
+Description=ecoFlow2vz — EcoFlow Stream MQTT → Volkszähler Bridge
+Documentation=https://github.com/maik/ecoFlow2vz
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/maik/software/ecoFlow2vz/.venv/bin/python /home/maik/software/ecoFlow2vz/ecoflow2vz.py
+WorkingDirectory=/home/maik/software/ecoFlow2vz
+Restart=always
+RestartSec=10
+
+# Logging über journald
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ecoflow2vz
+
+# Sicherheits-Einstellungen
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/maik/software/ecoFlow2vz
+
+[Install]
+WantedBy=multi-user.target
