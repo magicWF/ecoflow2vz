@@ -2,90 +2,89 @@
 
 EcoFlow Stream MQTT → Volkszähler Bridge
 
-Empfängt Live-Daten von der EcoFlow Developer API (MQTT) und leitet sie an eine [Volkszähler](https://volkszaehler.org/)-Instanz weiter.
+Receives live data from the EcoFlow Developer API (MQTT) and forwards it to a [Volkszähler](https://volkszaehler.org/) instance.
 
-## Unterstützte Geräte
+## Supported Devices
 
 - EcoFlow Stream 600 AC / 800 AC
 - EcoFlow Stream Pro
 - EcoFlow Stream Ultra / Ultra X
 
-## Übertragene Werte
+## Transmitted Values
 
-| Kanal | EcoFlow MQTT-Feld | Einheit |
-|-------|-------------------|---------|
-| Leistung PV1 | `powGetPv` | W |
-| Leistung PV2 | `powGetPv2` | W |
-| Leistung PV3 | `powGetPv3` | W |
-| Leistung PV4 | `powGetPv4` | W |
-| Summe Leistung PV | `powGetPvSum` | W |
-| Leistung Batterie | `powGetBpCms` | W |
-| Leistung Grid | `sysGridConnectionPower` | W |
-| SoC Batterie | `cmsBattSoc` | % |
-| Gespeicherte Energie | berechnet aus `cmsBattFullEnergy × cmsBattSoc / 100` | Wh |
+| Channel | EcoFlow MQTT Field | Unit |
+|---------|--------------------|------|
+| PV1 Power | `powGetPv` | W |
+| PV2 Power | `powGetPv2` | W |
+| PV3 Power | `powGetPv3` | W |
+| PV4 Power | `powGetPv4` | W |
+| Total PV Power | `powGetPvSum` | W |
+| Battery Power | `powGetBpCms` | W |
+| Grid Power | `sysGridConnectionPower` | W |
+| Battery SoC | `cmsBattSoc` | % |
+| Stored Energy | calculated from `cmsBattFullEnergy × cmsBattSoc / 100` | Wh |
 
-> **Batterie-Leistung:** Positiv = Laden, Negativ = Entladen
+> **Battery Power:** Positive = Charging, Negative = Discharging
 
-## Voraussetzungen
+## Prerequisites
 
 - Python 3.10+
-- EcoFlow Developer Account mit `accessKey` und `secretKey`
-  → Registrierung: [developer.ecoflow.com](https://developer.ecoflow.com)
-- Volkszähler-Instanz mit Middleware API
+- EcoFlow Developer Account with `accessKey` and `secretKey`
+  → Register at: [developer.ecoflow.com](https://developer.ecoflow.com)
+- Volkszähler instance with Middleware API
 
 ## Installation
 
-### 1. Repository klonen
+### 1. Clone the Repository
 
 ```bash
-cd /home/maik/software
 git clone <repo-url> ecoFlow2vz
 cd ecoFlow2vz
 ```
 
-### 2. Python-Abhängigkeiten installieren
+### 2. Install Python Dependencies
 
 ```bash
 pip3 install -r requirements.txt
 ```
 
-### 3. Konfiguration anlegen
+### 3. Create Configuration
 
 ```bash
 cp config.example.yaml config.yaml
 nano config.yaml
 ```
 
-Trage ein:
-- EcoFlow `access_key`, `secret_key` und `device_sn`
+Fill in:
+- EcoFlow `access_key`, `secret_key` and `device_sn`
 - Volkszähler `base_url`
-- Kanal-UUIDs (siehe nächster Abschnitt)
+- Channel UUIDs (see next section)
 
-### 4. Volkszähler-Kanäle anlegen
+### 4. Create Volkszähler Channels
 
-Lege in deinem Volkszähler für jeden Messwert einen Kanal an. Du kannst das über die Volkszähler-Weboberfläche oder per `curl` machen:
+Create a channel in Volkszähler for each measurement value. You can do this via the Volkszähler web interface or using `curl`:
 
 ```bash
-VZ_URL="http://vz-g14.home:81/middleware"
+VZ_URL="https://volkszahler.org/middleware"
 
-# Beispiel: Kanal für PV1-Leistung anlegen
+# Example: Create a channel for PV1 power
 curl -s -X POST -d "type=powersensor&title=EcoFlow+PV1&resolution=1" \
   "$VZ_URL/channel.json" | python3 -m json.tool
 ```
 
-Die UUID aus der Antwort in `config.yaml` bei `pv1_power` eintragen. Wiederhole für alle Kanäle:
+Copy the UUID from the response into `config.yaml` under `pv1_power`. Repeat for all channels:
 
-| Config-Key | Empfohlener Titel | Typ |
-|------------|-------------------|-----|
+| Config Key | Suggested Title | Type |
+|------------|-----------------|------|
 | `pv1_power` | EcoFlow PV1 | `powersensor` |
 | `pv2_power` | EcoFlow PV2 | `powersensor` |
 | `pv3_power` | EcoFlow PV3 | `powersensor` |
 | `pv4_power` | EcoFlow PV4 | `powersensor` |
-| `pv_total` | EcoFlow PV Gesamt | `powersensor` |
-| `battery_power` | EcoFlow Batterie | `powersensor` |
+| `pv_total` | EcoFlow PV Total | `powersensor` |
+| `battery_power` | EcoFlow Battery | `powersensor` |
 | `grid_power` | EcoFlow Grid | `powersensor` |
-| `battery_soc` | EcoFlow Batterie SoC | `powersensor` |
-| `battery_energy` | EcoFlow Batterie Energie | `powersensor` |
+| `battery_soc` | EcoFlow Battery SoC | `powersensor` |
+| `battery_energy` | EcoFlow Battery Energy | `powersensor` |
 
 ### 5. Test
 
@@ -93,79 +92,79 @@ Die UUID aus der Antwort in `config.yaml` bei `pv1_power` eintragen. Wiederhole 
 python3 ecoflow2vz.py
 ```
 
-Erwartete Ausgabe:
+Expected output:
 ```
-2026-09-28 12:00:00 [INFO   ] ecoflow2vz: ecoFlow2vz v1.0.0 gestartet
-2026-09-28 12:00:00 [INFO   ] ecoflow2vz: Gerät: DXXXXXXXXX
-2026-09-28 12:00:01 [INFO   ] ecoflow2vz: MQTT-Credentials erhalten — Broker: mqtt.ecoflow.com:8883
-2026-09-28 12:00:02 [INFO   ] ecoflow2vz: MQTT verbunden — Subscribe auf: /open/...
-2026-09-28 12:00:05 [INFO   ] ecoflow2vz: VZ Push: 9 OK, 0 Fehler | PV: 350W, Bat: 79W (82%), Grid: 274W
+2026-09-28 12:00:00 [INFO   ] ecoflow2vz: ecoFlow2vz v1.0.0 started
+2026-09-28 12:00:00 [INFO   ] ecoflow2vz: Device: DXXXXXXXXX
+2026-09-28 12:00:01 [INFO   ] ecoflow2vz: MQTT credentials received — broker: mqtt.ecoflow.com:8883
+2026-09-28 12:00:02 [INFO   ] ecoflow2vz: MQTT connected — subscribed to: /open/...
+2026-09-28 12:00:05 [INFO   ] ecoflow2vz: VZ push: 9 OK, 0 failed | PV: 350W, Battery: 79W (82%), Grid: 274W
 ```
 
-Mit `Ctrl+C` beenden.
+Stop with `Ctrl+C`.
 
-### 6. Systemd-Service installieren
+### 6. Install Systemd Service
 
 ```bash
-# Service-Datei anpassen (Pfade prüfen!)
+# Review and adjust paths in the service file
 nano ecoflow2vz.service
 
-# Installieren und starten
+# Install and start
 sudo cp ecoflow2vz.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable ecoflow2vz
 sudo systemctl start ecoflow2vz
 
-# Status prüfen
+# Check status
 sudo systemctl status ecoflow2vz
 
-# Logs verfolgen
+# Follow logs
 journalctl -u ecoflow2vz -f
 ```
 
-## Konfiguration
+## Configuration
 
-Alle Einstellungen in `config.yaml`:
+All settings in `config.yaml`:
 
 ```yaml
 ecoflow:
   access_key: "..."              # EcoFlow Developer API Access Key
   secret_key: "..."              # EcoFlow Developer API Secret Key
-  device_sn: "..."               # Seriennummer des Stream-Geräts
+  device_sn: "..."               # Serial number of your Stream device
   api_host: "api-e.ecoflow.com"  # EU: api-e.ecoflow.com | Global: api.ecoflow.com
 
 volkszaehler:
-  base_url: "http://vz-g14.home:81/middleware"
+  base_url: "https://volkszaehler.org/middleware"
 
 channels:
-  pv1_power:      "uuid-1"      # Leere UUIDs werden übersprungen
+  pv1_power:      "uuid-1"      # Empty UUIDs are skipped
   pv2_power:      "uuid-2"
   ...
 
-push_interval_seconds: 0         # 0 = sofort bei jeder Nachricht
-battery_capacity_wh: 3840        # Fallback falls cmsBattFullEnergy fehlt
+push_interval_seconds: 0         # 0 = push immediately on every message
+battery_capacity_wh: 3840        # Fallback if cmsBattFullEnergy is not received
 log_level: "INFO"                # DEBUG | INFO | WARNING | ERROR
 ```
 
-### Push-Intervall
+### Push Interval
 
-- `0` — Jede MQTT-Nachricht wird sofort an Volkszähler weitergeleitet (~alle 2-5 Sekunden)
-- `10` — Maximal alle 10 Sekunden pushen (reduziert Last auf VZ)
+- `0` — Every MQTT message is forwarded to Volkszähler immediately (~every 2-5 seconds)
+- `10` — Push at most every 10 seconds (reduces load on VZ)
 
-### Kanal-UUIDs
+### Channel UUIDs
 
-Kanäle, die keine UUID haben (leer oder nicht gesetzt), werden übersprungen. So kannst du auch nur einzelne Werte übertragen.
+Channels without a UUID (empty or not set) are skipped. This allows you to selectively transmit only specific values.
 
-## Fehlerbehebung
+## Troubleshooting
 
-| Problem | Lösung |
-|---------|--------|
-| `EcoFlow API Fehler` | Access Key / Secret Key prüfen. EU-Accounts brauchen `api-e.ecoflow.com` |
-| `MQTT Verbindung fehlgeschlagen` | Firewall: Port 8883 (TLS) muss raus erreichbar sein |
-| `VZ Push fehlgeschlagen` | Volkszähler-URL prüfen, UUID korrekt? Test: `curl http://vz-host/middleware/data/UUID.json` |
-| Keine MQTT-Nachrichten | Device SN prüfen. Gerät muss online sein (in EcoFlow App sichtbar) |
-| `Konfiguration unvollständig` | `config.yaml` prüfen — alle `YOUR_*` Platzhalter ersetzen |
+| Problem | Solution |
+|---------|----------|
+| `EcoFlow API error` | Check Access Key / Secret Key. EU accounts require `api-e.ecoflow.com` |
+| `MQTT connection failed` | Firewall: outbound port 8883 (TLS) must be open |
+| `VZ push failed` | Check Volkszähler URL and UUID. Test: `curl http://vz-host/middleware/data/UUID.json` |
+| No MQTT messages | Check Device SN. Device must be online (visible in EcoFlow App) |
+| `Configuration incomplete` | Check `config.yaml` — replace all `YOUR_*` placeholders |
 
-## Lizenz
+## License
 
 MIT

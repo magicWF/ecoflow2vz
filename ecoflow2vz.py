@@ -2,10 +2,10 @@
 """
 ecoFlow2vz — EcoFlow Stream MQTT → Volkszähler Bridge
 
-Empfängt Live-Daten von der EcoFlow Developer API (MQTT) und leitet
-sie an eine Volkszähler-Instanz weiter.
+Receives live data from the EcoFlow Developer API (MQTT) and forwards it to
+an instance of Volkszähler.
 
-Unterstützte Geräte: EcoFlow Stream AC / Pro / Ultra / Ultra X
+Supported devices: EcoFlow Stream AC / Pro / Ultra / Ultra X
 """
 
 import hashlib
@@ -25,13 +25,13 @@ import requests
 import yaml
 
 # =============================================================================
-# Konstanten
+# Constants
 # =============================================================================
 
 VERSION = "1.0.0"
 CONFIG_FILE = Path(__file__).parent / "config.yaml"
 
-# EcoFlow MQTT Key → interner Name
+# EcoFlow MQTT key → internal name
 FIELD_MAPPING = {
     "powGetPv":               "pv1_power",
     "powGetPv2":              "pv2_power",
@@ -41,11 +41,11 @@ FIELD_MAPPING = {
     "powGetBpCms":            "battery_power",
     "sysGridConnectionPower": "grid_power",
     "cmsBattSoc":             "battery_soc",
-    "bmsBattSoc":             "_bmsBattSoc",       # Fallback für SoC
-    "cmsBattFullEnergy":      "_battFullEnergy",    # Für Berechnung stored energy
+    "bmsBattSoc":             "_bmsBattSoc",       # Fallback for SoC
+    "cmsBattFullEnergy":      "_battFullEnergy",    # For stored energy calculation
 }
 
-# Kanäle, die direkt an VZ gepusht werden (ohne führenden Unterstrich)
+# Channels to push directly to Volkszähler (without a leading underscore)
 PUSH_CHANNELS = [
     "pv1_power",
     "pv2_power",
@@ -62,20 +62,20 @@ logger = logging.getLogger("ecoflow2vz")
 
 
 # =============================================================================
-# Konfiguration laden
+# Load configuration
 # =============================================================================
 
 def load_config(path: Path = CONFIG_FILE) -> dict:
-    """Lädt die YAML-Konfiguration."""
+    """Load the YAML configuration."""
     if not path.exists():
-        logger.error("Konfigurationsdatei nicht gefunden: %s", path)
-        logger.error("Kopiere config.example.yaml nach config.yaml und passe die Werte an.")
+        logger.error("Configuration file not found: %s", path)
+        logger.error("Copy config.example.yaml to config.yaml and adjust the values.")
         sys.exit(1)
 
     with open(path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # Validierung
+    # Validation
     required_keys = [
         ("ecoflow", "access_key"),
         ("ecoflow", "secret_key"),
@@ -85,18 +85,18 @@ def load_config(path: Path = CONFIG_FILE) -> dict:
     for section, key in required_keys:
         value = config.get(section, {}).get(key, "")
         if not value or value.startswith("YOUR_"):
-            logger.error("Konfiguration unvollständig: %s.%s muss gesetzt werden.", section, key)
+            logger.error("Configuration incomplete: %s.%s must be set.", section, key)
             sys.exit(1)
 
     return config
 
 
 # =============================================================================
-# EcoFlow API Authentifizierung
+# EcoFlow API Authentication
 # =============================================================================
 
 class EcoFlowAuth:
-    """Holt temporäre MQTT-Credentials über die EcoFlow Developer API."""
+    """Fetch temporary MQTT credentials from the EcoFlow Developer API."""
 
     def __init__(self, access_key: str, secret_key: str, api_host: str):
         self.access_key = access_key
@@ -107,7 +107,7 @@ class EcoFlowAuth:
         return "".join(random.choices(string.ascii_letters + string.digits, k=length))
 
     def _generate_signature(self, nonce: str, timestamp: str) -> str:
-        """HMAC-SHA256 Signatur nach EcoFlow Developer API Spezifikation."""
+        """HMAC-SHA256 signature according to the EcoFlow Developer API specification."""
         message = f"accessKey={self.access_key}&nonce={nonce}&timestamp={timestamp}"
         sign = hmac.new(
             self.secret_key.encode("utf-8"),
@@ -118,10 +118,10 @@ class EcoFlowAuth:
 
     def get_mqtt_credentials(self) -> dict:
         """
-        Ruft temporäre MQTT-Credentials ab.
+        Retrieve temporary MQTT credentials.
 
         Returns:
-            dict mit keys: url, port, certificateAccount, certificatePassword
+            dict with keys: url, port, certificateAccount, certificatePassword
         """
         nonce = self._generate_nonce()
         timestamp = str(int(time.time() * 1000))
@@ -135,25 +135,25 @@ class EcoFlowAuth:
             "sign": sign,
         }
 
-        logger.debug("Hole MQTT-Credentials von %s", url)
+        logger.debug("Fetch MQTT credentials from %s", url)
 
         try:
             resp = requests.get(url, headers=headers, timeout=30)
             resp.raise_for_status()
         except requests.RequestException as e:
-            logger.error("Fehler beim Abrufen der MQTT-Credentials: %s", e)
+            logger.error("Error retrieving MQTT credentials: %s", e)
             raise
 
         data = resp.json()
 
         if data.get("code") != "0" and data.get("code") != 0:
-            error_msg = data.get("message", "Unbekannter Fehler")
-            logger.error("EcoFlow API Fehler: %s (code: %s)", error_msg, data.get("code"))
-            raise RuntimeError(f"EcoFlow API Fehler: {error_msg}")
+            error_msg = data.get("message", "Unknown error")
+            logger.error("EcoFlow API error: %s (code: %s)", error_msg, data.get("code"))
+            raise RuntimeError(f"EcoFlow API error: {error_msg}")
 
         creds = data["data"]
         logger.info(
-            "MQTT-Credentials erhalten — Broker: %s:%s",
+            "MQTT credentials received — broker: %s:%s",
             creds.get("url"),
             creds.get("port"),
         )
@@ -165,7 +165,7 @@ class EcoFlowAuth:
 # =============================================================================
 
 class VolkszaehlerClient:
-    """Pusht Messwerte an die Volkszähler Middleware REST API."""
+    """Push measurement values to the Volkszähler middleware REST API."""
 
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip("/")
@@ -173,15 +173,15 @@ class VolkszaehlerClient:
 
     def push_value(self, uuid: str, value: float, timestamp_ms: int | None = None) -> bool:
         """
-        Sendet einen Messwert an einen Volkszähler-Kanal.
+        Send a measurement to a Volkszähler channel.
 
         Args:
-            uuid: Kanal-UUID
-            value: Messwert
-            timestamp_ms: Zeitstempel in Millisekunden (None = Server-Zeit)
+            uuid: Channel UUID
+            value: Measurement value
+            timestamp_ms: Timestamp in milliseconds (None = server time)
 
         Returns:
-            True bei Erfolg, False bei Fehler
+            True on success, False on error
         """
         if not uuid:
             return False
@@ -194,10 +194,10 @@ class VolkszaehlerClient:
         try:
             resp = self.session.post(url, params=params, timeout=10)
             resp.raise_for_status()
-            logger.debug("VZ Push OK: %s = %s", uuid, value)
+            logger.debug("VZ push OK: %s = %s", uuid, value)
             return True
         except requests.RequestException as e:
-            logger.warning("VZ Push fehlgeschlagen für %s: %s", uuid, e)
+            logger.warning("VZ push failed for %s: %s", uuid, e)
             return False
 
     def close(self):
@@ -209,13 +209,13 @@ class VolkszaehlerClient:
 # =============================================================================
 
 class EcoFlow2VZ:
-    """Hauptklasse: Verbindet EcoFlow MQTT mit Volkszähler."""
+    """Main class: connects EcoFlow MQTT to Volkszähler."""
 
     def __init__(self, config: dict):
         self.config = config
         self.running = False
 
-        # EcoFlow Config
+        # EcoFlow config
         eco_cfg = config["ecoflow"]
         self.device_sn = eco_cfg["device_sn"]
         self.auth = EcoFlowAuth(
@@ -224,28 +224,28 @@ class EcoFlow2VZ:
             api_host=eco_cfg.get("api_host", "api-e.ecoflow.com"),
         )
 
-        # Volkszähler Client
+        # Volkszähler client
         vz_cfg = config["volkszaehler"]
         self.vz = VolkszaehlerClient(base_url=vz_cfg["base_url"])
 
-        # Kanal-UUIDs (nur nicht-leere)
+        # Channel UUIDs (non-empty only)
         self.channel_uuids: dict[str, str] = {}
         for name, uuid in config.get("channels", {}).items():
             if uuid and isinstance(uuid, str) and uuid.strip():
                 self.channel_uuids[name] = uuid.strip()
 
         if not self.channel_uuids:
-            logger.warning("Keine Volkszähler-Kanal-UUIDs konfiguriert!")
+            logger.warning("No Volkszähler channel UUIDs configured!")
 
-        # Optionale Einstellungen
+        # Optional settings
         self.push_interval = config.get("push_interval_seconds", 0)
         self.battery_capacity_wh = config.get("battery_capacity_wh", 3840)
         self.last_push_time: float = 0.0
 
-        # Interner State — hält die zuletzt empfangenen Werte
+        # Internal state — stores the most recently received values
         self.state: dict[str, float] = {}
 
-        # MQTT Client
+        # MQTT client
         self.mqtt_client: mqtt.Client | None = None
         self.mqtt_username: str = ""
 
@@ -254,11 +254,11 @@ class EcoFlow2VZ:
         self._max_reconnect_delay = 300
 
     def _get_client_id(self) -> str:
-        """Feste Client-ID (max. 10 unique IDs/Tag bei EcoFlow)."""
+        """Fixed client ID (max. 10 unique IDs per day at EcoFlow)."""
         return f"ecoflow2vz-{self.device_sn}"
 
     def _get_topic(self) -> str:
-        """MQTT-Topic für Live-Daten (Public API)."""
+        """MQTT topic for live data (public API)."""
         return f"/open/{self.mqtt_username}/{self.device_sn}/quota"
 
     # -------------------------------------------------------------------------
@@ -268,36 +268,36 @@ class EcoFlow2VZ:
     def _on_connect(self, client, userdata, flags, reason_code, properties=None):
         if reason_code == 0:
             topic = self._get_topic()
-            logger.info("MQTT verbunden — Subscribe auf: %s", topic)
+            logger.info("MQTT connected — subscribing to: %s", topic)
             client.subscribe(topic)
             self._reconnect_delay = 5  # Reset
         else:
-            logger.error("MQTT Verbindung fehlgeschlagen: reason_code=%s", reason_code)
+            logger.error("MQTT connection failed: reason_code=%s", reason_code)
 
     def _on_disconnect(self, client, userdata, flags, reason_code, properties=None):
         if self.running:
-            logger.warning("MQTT Verbindung getrennt (reason_code=%s). Reconnect...", reason_code)
+            logger.warning("MQTT connection lost (reason_code=%s). Reconnecting...", reason_code)
 
     def _on_message(self, client, userdata, msg):
         try:
             payload = json.loads(msg.payload.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            logger.warning("Ungültige MQTT-Nachricht: %s", e)
+            logger.warning("Invalid MQTT message: %s", e)
             return
 
-        logger.debug("MQTT Nachricht empfangen: %d Felder", len(payload))
+        logger.debug("MQTT message received: %d fields", len(payload))
         self._process_message(payload)
 
     # -------------------------------------------------------------------------
-    # Datenverarbeitung
+    # Data processing
     # -------------------------------------------------------------------------
 
     def _process_message(self, payload: dict):
-        """Verarbeitet eine MQTT-Nachricht und aktualisiert den State."""
+        """Process an MQTT message and update the state."""
         updated_channels: set[str] = set()
         now_ms = int(time.time() * 1000)
 
-        # Relevante Felder extrahieren und in State schreiben
+        # Extract relevant fields and write them to the state
         for mqtt_key, internal_name in FIELD_MAPPING.items():
             if mqtt_key in payload:
                 value = payload[mqtt_key]
@@ -306,12 +306,12 @@ class EcoFlow2VZ:
                     if not internal_name.startswith("_"):
                         updated_channels.add(internal_name)
 
-        # SoC Fallback: bmsBattSoc verwenden wenn cmsBattSoc nicht vorhanden
+        # SoC fallback: use bmsBattSoc if cmsBattSoc is not present
         if "battery_soc" not in self.state and "_bmsBattSoc" in self.state:
             self.state["battery_soc"] = self.state["_bmsBattSoc"]
             updated_channels.add("battery_soc")
 
-        # Gespeicherte Energie berechnen
+        # Calculate stored energy
         soc = self.state.get("battery_soc")
         if soc is not None:
             full_energy = self.state.get("_battFullEnergy", self.battery_capacity_wh)
@@ -319,25 +319,25 @@ class EcoFlow2VZ:
             self.state["battery_energy"] = stored_energy
             updated_channels.add("battery_energy")
 
-        # Push-Throttle prüfen
+        # Check push throttle
         if self.push_interval > 0:
             now = time.time()
             if now - self.last_push_time < self.push_interval:
-                logger.debug("Push übersprungen (Throttle: %.1fs verbleibend)",
+                logger.debug("Push skipped (throttle: %.1fs remaining)",
                              self.push_interval - (now - self.last_push_time))
                 return
             self.last_push_time = now
 
-        # An Volkszähler pushen
+        # Push to Volkszähler
         self._push_to_vz(updated_channels, now_ms)
 
     def _push_to_vz(self, updated_channels: set[str], timestamp_ms: int):
-        """Pusht aktualisierte Werte an Volkszähler."""
+        """Push updated values to Volkszähler."""
         push_count = 0
         error_count = 0
 
         for channel_name in PUSH_CHANNELS:
-            # Nur pushen, wenn UUID konfiguriert und Wert vorhanden
+            # Only push if a UUID is configured and a value is present
             uuid = self.channel_uuids.get(channel_name)
             if not uuid:
                 continue
@@ -346,7 +346,7 @@ class EcoFlow2VZ:
             if value is None:
                 continue
 
-            # Nur geänderte Kanäle pushen (wenn push_interval == 0)
+            # Only push changed channels when push_interval == 0
             if self.push_interval == 0 and channel_name not in updated_channels:
                 continue
 
@@ -357,7 +357,7 @@ class EcoFlow2VZ:
 
         if push_count > 0 or error_count > 0:
             logger.info(
-                "VZ Push: %d OK, %d Fehler | PV: %.0fW, Bat: %.0fW (%.0f%%), Grid: %.0fW",
+                "VZ push: %d OK, %d failed | PV: %.0fW, Battery: %.0fW (%.0f%%), Grid: %.0fW",
                 push_count,
                 error_count,
                 self.state.get("pv_total", 0),
@@ -367,15 +367,15 @@ class EcoFlow2VZ:
             )
 
     # -------------------------------------------------------------------------
-    # MQTT Verbindung
+    # MQTT Connection
     # -------------------------------------------------------------------------
 
     def _connect_mqtt(self) -> bool:
-        """Authentifiziert sich bei EcoFlow und verbindet per MQTT."""
+        """Authenticate with EcoFlow and connect via MQTT."""
         try:
             creds = self.auth.get_mqtt_credentials()
         except Exception as e:
-            logger.error("Authentifizierung fehlgeschlagen: %s", e)
+            logger.error("Authentication failed: %s", e)
             return False
 
         broker_url = creds.get("url", "mqtt.ecoflow.com")
@@ -384,7 +384,7 @@ class EcoFlow2VZ:
         password = creds["certificatePassword"]
         self.mqtt_username = username
 
-        # MQTT Client erstellen (paho-mqtt v2 API)
+        # Create MQTT client (paho-mqtt v2 API)
         self.mqtt_client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
             client_id=self._get_client_id(),
@@ -402,41 +402,41 @@ class EcoFlow2VZ:
         self.mqtt_client.on_disconnect = self._on_disconnect
         self.mqtt_client.on_message = self._on_message
 
-        # Verbinden
-        logger.info("Verbinde mit MQTT Broker: %s:%d", broker_url, broker_port)
+        # Connect
+        logger.info("Connecting to MQTT broker: %s:%d", broker_url, broker_port)
         try:
             self.mqtt_client.connect(broker_url, broker_port, keepalive=60)
             return True
         except Exception as e:
-            logger.error("MQTT Verbindung fehlgeschlagen: %s", e)
+            logger.error("MQTT connection failed: %s", e)
             return False
 
     # -------------------------------------------------------------------------
-    # Hauptschleife
+    # Main loop
     # -------------------------------------------------------------------------
 
     def run(self):
-        """Startet den Bridge-Service."""
+        """Start the bridge service."""
         self.running = True
 
         logger.info("=" * 60)
-        logger.info("ecoFlow2vz v%s gestartet", VERSION)
-        logger.info("Gerät: %s", self.device_sn)
-        logger.info("VZ-URL: %s", self.config["volkszaehler"]["base_url"])
+        logger.info("ecoFlow2vz v%s started", VERSION)
+        logger.info("Device: %s", self.device_sn)
+        logger.info("VZ URL: %s", self.config["volkszaehler"]["base_url"])
         logger.info(
-            "Konfigurierte Kanäle: %s",
-            ", ".join(self.channel_uuids.keys()) if self.channel_uuids else "KEINE",
+            "Configured channels: %s",
+            ", ".join(self.channel_uuids.keys()) if self.channel_uuids else "NONE",
         )
         logger.info(
-            "Push-Intervall: %s",
-            f"{self.push_interval}s" if self.push_interval > 0 else "sofort (jede Nachricht)",
+            "Push interval: %s",
+            f"{self.push_interval}s" if self.push_interval > 0 else "immediately (every message)",
         )
         logger.info("=" * 60)
 
         while self.running:
             if not self._connect_mqtt():
                 logger.warning(
-                    "Erneuter Verbindungsversuch in %ds...", self._reconnect_delay
+                    "Retrying connection in %ds...", self._reconnect_delay
                 )
                 time.sleep(self._reconnect_delay)
                 self._reconnect_delay = min(
@@ -444,13 +444,13 @@ class EcoFlow2VZ:
                 )
                 continue
 
-            # MQTT Loop (blockiert bis Verbindung verloren oder stop())
+            # MQTT loop (blocks until disconnected or stop())
             try:
                 self.mqtt_client.loop_forever()
             except Exception as e:
-                logger.error("MQTT Loop Fehler: %s", e)
+                logger.error("MQTT loop error: %s", e)
 
-            # Nach Disconnect: Reconnect mit Delay
+            # After disconnect: reconnect with delay
             if self.running:
                 logger.info("Reconnect in %ds...", self._reconnect_delay)
                 time.sleep(self._reconnect_delay)
@@ -458,11 +458,11 @@ class EcoFlow2VZ:
                     self._reconnect_delay * 2, self._max_reconnect_delay
                 )
 
-        logger.info("ecoFlow2vz beendet.")
+        logger.info("ecoFlow2vz stopped.")
 
     def stop(self):
-        """Stoppt den Bridge-Service."""
-        logger.info("Stoppe ecoFlow2vz...")
+        """Stop the bridge service."""
+        logger.info("Stopping ecoFlow2vz...")
         self.running = False
         if self.mqtt_client:
             self.mqtt_client.disconnect()
@@ -474,10 +474,10 @@ class EcoFlow2VZ:
 # =============================================================================
 
 def main():
-    # Konfiguration laden
+    # Load configuration
     config = load_config()
 
-    # Logging einrichten
+    # Set up logging
     log_level = config.get("log_level", "INFO").upper()
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),
@@ -486,14 +486,14 @@ def main():
         stream=sys.stdout,
     )
 
-    logger.info("Konfiguration geladen von %s", CONFIG_FILE)
+    logger.info("Configuration loaded from %s", CONFIG_FILE)
 
-    # Bridge starten
+    # Start bridge
     bridge = EcoFlow2VZ(config)
 
-    # Signal-Handler für sauberen Shutdown
+    # Signal handler for graceful shutdown
     def signal_handler(signum, frame):
-        logger.info("Signal %s empfangen", signal.Signals(signum).name)
+        logger.info("Received signal %s", signal.Signals(signum).name)
         bridge.stop()
 
     signal.signal(signal.SIGINT, signal_handler)
